@@ -279,7 +279,7 @@ static cl::list<std::string> DisabledPasses("disablepass",
 class OptCustomPassManager : public legacy::PassManager {
 public:
   using super = legacy::PassManager;
-
+  
   void add(Pass *P) override {
     AnalysisID AID = P->getPassID();
     const PassInfo *PInfo = PassRegistry::getPassRegistry()->getPassInfo(AID);
@@ -319,6 +319,30 @@ public:
         break;
     }
   }
+};
+
+class OptDisableFunctionPassManager : public legacy::FunctionPassManager {
+public:
+    using super = legacy::FunctionPassManager;
+    
+    explicit OptDisableFunctionPassManager(Module *M) : super(M) {}
+    
+    void add(Pass *P) override {
+        AnalysisID AID = P->getPassID();
+        const PassInfo *PInfo = PassRegistry::getPassRegistry()->getPassInfo(AID);
+        StringRef PArg = PInfo->getPassArgument();
+        
+        // Hack to skip passes if disabled
+        for (unsigned i = 0; i < DisabledPasses.size(); i++) {
+            if (PArg == DisabledPasses[i]) {
+                dbgs() << "Pass disabled: "
+                << PArg << "\n";
+                return;
+            }
+        }
+        
+        super::add(P);
+    }
 };
 
 static inline void addPass(legacy::PassManagerBase &PM, Pass *P) {
@@ -651,7 +675,8 @@ int main(int argc, char **argv) {
   std::unique_ptr<legacy::FunctionPassManager> FPasses;
   if (OptLevelO0 || OptLevelO1 || OptLevelO2 || OptLevelOs || OptLevelOz ||
       OptLevelO3) {
-    FPasses.reset(new legacy::FunctionPassManager(M.get()));
+    //FPasses.reset(new legacy::FunctionPassManager(M.get()));
+    FPasses.reset(new OptDisableFunctionPassManager(M.get()));
     FPasses->add(createTargetTransformInfoWrapperPass(
         TM ? TM->getTargetIRAnalysis() : TargetIRAnalysis()));
   }
