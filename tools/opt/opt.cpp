@@ -265,17 +265,42 @@ static cl::opt<std::string>
                     cl::desc("YAML output filename for pass remarks"),
                     cl::value_desc("filename"));
 
+/****************************************************************************/
+// List of passes to disable
+// Use syntax
+// -disablepass pass_arg1 -disablepass pass_arg2
+// to disable multiple passes at the same time
+static cl::list<std::string> DisabledPasses("disablepass",
+                                           cl::desc("Disable the specified pass"),
+                                           cl::value_desc("passname"),
+                                           cl::ReallyHidden);
+/****************************************************************************/
+
 class OptCustomPassManager : public legacy::PassManager {
 public:
   using super = legacy::PassManager;
 
   void add(Pass *P) override {
+    AnalysisID AID = P->getPassID();
+    const PassInfo *PInfo = PassRegistry::getPassRegistry()->getPassInfo(AID);
+    StringRef PArg = PInfo->getPassArgument();
+
+    // Hack to skip passes if disabled
+    for (unsigned i = 0; i < DisabledPasses.size(); i++) {
+        if (PArg == DisabledPasses[i]) {
+            dbgs() << "Pass disabled: "
+                   << PArg << "\n";
+            return;
+        }
+    }
+      
     bool WrapWithDebugify = DebugifyEach && !P->getAsImmutablePass() &&
                             !isIRPrintingPass(P) && !isBitcodeWriterPass(P);
     if (!WrapWithDebugify) {
       super::add(P);
       return;
     }
+
     PassKind Kind = P->getPassKind();
     // TODO: Implement Debugify for BasicBlockPass, LoopPass.
     switch (Kind) {
