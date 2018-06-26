@@ -92,6 +92,15 @@ private:
   FunctionPassManagerImpl *FPM;
   Module *M;
 };
+    
+class OptDisableFunctionPassManager : public legacy::FunctionPassManager {
+public:
+    using super = legacy::FunctionPassManager;
+    
+    explicit OptDisableFunctionPassManager(Module *M) : super(M) {}
+    
+    void add(Pass *P) override;
+};
 
 } // End legacy namespace
 

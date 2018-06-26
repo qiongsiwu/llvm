@@ -60,6 +60,17 @@ PassDebugging("debug-pass", cl::Hidden,
   clEnumVal(Executions, "print pass name before it is executed"),
   clEnumVal(Details   , "print pass details when it is executed")));
 
+/****************************************************************************/
+// List of passes to disable
+// Use syntax
+// -disablepass=pass_arg1 -disablepass=pass_arg2
+// to disable multiple passes at the same time
+static cl::list<std::string> DisabledPasses("disablepass",
+                                            cl::desc("Disable the specified pass"),
+                                            cl::value_desc("passname"),
+                                            cl::ReallyHidden);
+/****************************************************************************/
+
 namespace {
 typedef llvm::cl::list<const llvm::PassInfo *, bool, PassNameParser>
 PassOptionList;
@@ -95,6 +106,38 @@ static cl::list<std::string>
                             "match this for all print-[before|after][-all] "
                             "options"),
                    cl::CommaSeparated, cl::Hidden);
+
+/****************************************************************************/
+// Static function to determine if a pass should be skipped
+
+static bool SkipPass(Pass *P) {
+    AnalysisID AID = P->getPassID();
+    const PassInfo *PInfo = PassRegistry::getPassRegistry()->getPassInfo(AID);
+    
+    // There are passes that are somehow not registered
+    // but are added. For example
+    // SpeculativeExecutionLegacyPass
+    // Such passes are not skipped because if they are not registered,
+    // opt should not be able to use it, and we don't have to skip it.
+    // Need suggestions on how to do this better.
+    if (!PInfo) {
+        return false;
+    }
+    
+    StringRef PArg = PInfo->getPassArgument();
+    
+    for (unsigned i = 0; i < DisabledPasses.size(); i++) {
+        if (PArg == DisabledPasses[i]) {
+            dbgs() << "Pass disabled: "
+                   << PArg << "\n";
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/****************************************************************************/
 
 /// This is a helper to determine whether to print IR before or
 /// after a pass.
@@ -1468,6 +1511,16 @@ bool FunctionPassManager::doFinalization() {
 }
 
 //===----------------------------------------------------------------------===//
+// OptDisableFunctionPassManager
+
+void OptDisableFunctionPassManager::add(Pass *P) {
+    if (SkipPass(P))
+        return;
+    super::add(P);
+}
+
+
+//===----------------------------------------------------------------------===//
 // FunctionPassManagerImpl implementation
 //
 bool FunctionPassManagerImpl::doInitialization(Module &M) {
@@ -1786,6 +1839,8 @@ PassManager::~PassManager() {
 }
 
 void PassManager::add(Pass *P) {
+  if (SkipPass(P))
+      return;
   PM->add(P);
 }
 
