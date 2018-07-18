@@ -1461,6 +1461,14 @@ example:
     trap or generate asynchronous exceptions. Exception handling schemes
     that are recognized by LLVM to handle asynchronous exceptions, such
     as SEH, will still provide their implementation defined semantics.
+``"null-pointer-is-valid"``
+   If ``"null-pointer-is-valid"`` is set to ``"true"``, then ``null`` address
+   in address-space 0 is considered to be a valid address for memory loads and
+   stores. Any analysis or optimization should not treat dereferencing a
+   pointer to ``null`` as undefined behavior in this function.
+   Note: Comparing address of a global variable to ``null`` may still
+   evaluate to false because of a limitation in querying this attribute inside
+   constant expressions.
 ``optforfuzzing``
     This attribute indicates that this function should be optimized
     for maximum fuzzing signal.
@@ -1703,10 +1711,10 @@ example:
     the ELF x86-64 abi, but it can be disabled for some compilation
     units.
 ``nocf_check``
-    This attribute indicates that no control-flow check will be perfomed on
+    This attribute indicates that no control-flow check will be performed on
     the attributed entity. It disables -fcf-protection=<> for a specific
     entity to fine grain the HW control flow protection mechanism. The flag
-    is target independant and currently appertains to a function or function
+    is target independent and currently appertains to a function or function
     pointer.
 ``shadowcallstack``
     This attribute indicates that the ShadowCallStack checks are enabled for
@@ -2342,13 +2350,13 @@ floating-point transformations.
 
 ``nnan``
    No NaNs - Allow optimizations to assume the arguments and result are not
-   NaN. Such optimizations are required to retain defined behavior over
-   NaNs, but the value of the result is undefined.
+   NaN. If an argument is a nan, or the result would be a nan, it produces
+   a :ref:`poison value <poisonvalues>` instead.
 
 ``ninf``
    No Infs - Allow optimizations to assume the arguments and result are not
-   +/-Inf. Such optimizations are required to retain defined behavior over
-   +/-Inf, but the value of the result is undefined.
+   +/-Inf. If an argument is +/-Inf, or the result would be +/-Inf, it
+   produces a :ref:`poison value <poisonvalues>` instead.
 
 ``nsz``
    No Signed Zeros - Allow optimizations to treat the sign of a zero
@@ -3288,14 +3296,12 @@ The following is the syntax for constant expressions:
     Convert an unsigned integer constant to the corresponding 
     floating-point constant. TYPE must be a scalar or vector floating-point
     type.  CST must be of scalar or vector integer type. Both CST and TYPE must
-    be scalars, or vectors of the same number of elements. If the value
-    won't fit in the floating-point type, the results are undefined.
+    be scalars, or vectors of the same number of elements.
 ``sitofp (CST to TYPE)``
     Convert a signed integer constant to the corresponding floating-point
     constant. TYPE must be a scalar or vector floating-point type.
     CST must be of scalar or vector integer type. Both CST and TYPE must
-    be scalars, or vectors of the same number of elements. If the value
-    won't fit in the floating-point type, the results are undefined.
+    be scalars, or vectors of the same number of elements.
 ``ptrtoint (CST to TYPE)``
     Perform the :ref:`ptrtoint operation <i_ptrtoint>` on constants.
 ``inttoptr (CST to TYPE)``
@@ -4935,10 +4941,11 @@ representing the maximum relative error, for example:
 
 ``range`` metadata may be attached only to ``load``, ``call`` and ``invoke`` of
 integer types. It expresses the possible ranges the loaded value or the value
-returned by the called function at this call site is in. The ranges are
-represented with a flattened list of integers. The loaded value or the value
-returned is known to be in the union of the ranges defined by each consecutive
-pair. Each pair has the following properties:
+returned by the called function at this call site is in. If the loaded or
+returned value is not in the specified range, the behavior is undefined. The
+ranges are represented with a flattened list of integers. The loaded value or
+the value returned is known to be in the union of the ranges defined by each
+consecutive pair. Each pair has the following properties:
 
 -  The type must match the type loaded by the instruction.
 -  The pair ``a,b`` represents the range ``[a,b)``.
@@ -7856,9 +7863,9 @@ memory is automatically released when the function returns. The
 '``alloca``' instruction is commonly used to represent automatic
 variables that must have an address available. When the function returns
 (either with the ``ret`` or ``resume`` instructions), the memory is
-reclaimed. Allocating zero bytes is legal, but the result is undefined.
-The order in which memory is allocated (ie., which way the stack grows)
-is not specified.
+reclaimed. Allocating zero bytes is legal, but the returned pointer may not
+be unique. The order in which memory is allocated (ie., which way the stack
+grows) is not specified.
 
 Example:
 """"""""
@@ -7939,7 +7946,8 @@ metadata name ``<index>`` corresponding to a metadata node with no
 entries. If a load instruction tagged with the ``!invariant.load``
 metadata is executed, the optimizer may assume the memory location
 referenced by the load contains the same value at all points in the
-program where the memory location is known to be dereferenceable.
+program where the memory location is known to be dereferenceable;
+otherwise, the behavior is undefined.
 
 The optional ``!invariant.group`` metadata must reference a single metadata name
  ``<index>`` corresponding to a metadata node with no entries.
@@ -7949,9 +7957,9 @@ The optional ``!nonnull`` metadata must reference a single
 metadata name ``<index>`` corresponding to a metadata node with no
 entries. The existence of the ``!nonnull`` metadata on the
 instruction tells the optimizer that the value loaded is known to
-never be null. This is analogous to the ``nonnull`` attribute
-on parameters and return values. This metadata can only be applied
-to loads of a pointer type.
+never be null. If the value is null at runtime, the behavior is undefined.
+This is analogous to the ``nonnull`` attribute on parameters and return
+values. This metadata can only be applied to loads of a pointer type.
 
 The optional ``!dereferenceable`` metadata must reference a single metadata
 name ``<deref_bytes_node>`` corresponding to a metadata node with one ``i64``
@@ -7978,7 +7986,8 @@ The existence of the ``!align`` metadata on the instruction tells the
 optimizer that the value loaded is known to be aligned to a boundary specified
 by the integer value in the metadata node. The alignment must be a power of 2.
 This is analogous to the ''align'' attribute on parameters and return values.
-This metadata can only be applied to loads of a pointer type.
+This metadata can only be applied to loads of a pointer type. If the returned
+value is not appropriately aligned at runtime, the behavior is undefined.
 
 Semantics:
 """"""""""
@@ -8851,8 +8860,9 @@ Semantics:
 
 The '``uitofp``' instruction interprets its operand as an unsigned
 integer quantity and converts it to the corresponding floating-point
-value. If the value cannot fit in the floating-point value, the results
-are undefined.
+value. If the value cannot be exactly represented, it is rounded using
+the default rounding mode.
+
 
 Example:
 """"""""
@@ -8891,9 +8901,9 @@ Semantics:
 """"""""""
 
 The '``sitofp``' instruction interprets its operand as a signed integer
-quantity and converts it to the corresponding floating-point value. If
-the value cannot fit in the floating-point value, the results are
-undefined.
+quantity and converts it to the corresponding floating-point value. If the
+value cannot be exactly represented, it is rounded using the default rounding
+mode.
 
 Example:
 """"""""
@@ -9287,7 +9297,7 @@ otherwise unsafe floating-point optimizations.
 Any set of fast-math flags are legal on an ``fcmp`` instruction, but the
 only flags that have any effect on its semantics are those that allow
 assumptions to be made about the values of input arguments; namely
-``nnan``, ``ninf``, and ``nsz``. See :ref:`fastmath` for more information.
+``nnan``, ``ninf``, and ``reassoc``. See :ref:`fastmath` for more information.
 
 Example:
 """"""""
@@ -11873,6 +11883,98 @@ then the result is the size in bits of the type of ``src`` if
 
 .. _int_overflow:
 
+'``llvm.fshl.*``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+This is an overloaded intrinsic. You can use ``llvm.fshl`` on any
+integer bit width or any vector of integer elements. Not all targets
+support all bit widths or vector types, however.
+
+::
+
+      declare i8  @llvm.fshl.i8 (i8 %a, i8 %b, i8 %c)
+      declare i67 @llvm.fshl.i67(i67 %a, i67 %b, i67 %c)
+      declare <2 x i32> @llvm.fshl.v2i32(<2 x i32> %a, <2 x i32> %b, <2 x i32> %c)
+
+Overview:
+"""""""""
+
+The '``llvm.fshl``' family of intrinsic functions performs a funnel shift left:
+the first two values are concatenated as { %a : %b } (%a is the most significant
+bits of the wide value), the combined value is shifted left, and the most 
+significant bits are extracted to produce a result that is the same size as the 
+original arguments. If the first 2 arguments are identical, this is equivalent 
+to a rotate left operation. For vector types, the operation occurs for each 
+element of the vector. The shift argument is treated as an unsigned amount 
+modulo the element size of the arguments.
+
+Arguments:
+""""""""""
+
+The first two arguments are the values to be concatenated. The third
+argument is the shift amount. The arguments may be any integer type or a
+vector with integer element type. All arguments and the return value must
+have the same type.
+
+Example:
+""""""""
+
+.. code-block:: text
+
+      %r = call i8 @llvm.fshl.i8(i8 %x, i8 %y, i8 %z)  ; %r = i8: msb_extract((concat(x, y) << (z % 8)), 8)
+      %r = call i8 @llvm.fshl.i8(i8 255, i8 0, i8 15)  ; %r = i8: 128 (0b10000000)
+      %r = call i8 @llvm.fshl.i8(i8 15, i8 15, i8 11)  ; %r = i8: 120 (0b01111000)
+      %r = call i8 @llvm.fshl.i8(i8 0, i8 255, i8 8)   ; %r = i8: 0   (0b00000000)
+
+'``llvm.fshr.*``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+This is an overloaded intrinsic. You can use ``llvm.fshr`` on any
+integer bit width or any vector of integer elements. Not all targets
+support all bit widths or vector types, however.
+
+::
+
+      declare i8  @llvm.fshr.i8 (i8 %a, i8 %b, i8 %c)
+      declare i67 @llvm.fshr.i67(i67 %a, i67 %b, i67 %c)
+      declare <2 x i32> @llvm.fshr.v2i32(<2 x i32> %a, <2 x i32> %b, <2 x i32> %c)
+
+Overview:
+"""""""""
+
+The '``llvm.fshr``' family of intrinsic functions performs a funnel shift right:
+the first two values are concatenated as { %a : %b } (%a is the most significant
+bits of the wide value), the combined value is shifted right, and the least 
+significant bits are extracted to produce a result that is the same size as the 
+original arguments. If the first 2 arguments are identical, this is equivalent 
+to a rotate right operation. For vector types, the operation occurs for each 
+element of the vector. The shift argument is treated as an unsigned amount 
+modulo the element size of the arguments.
+
+Arguments:
+""""""""""
+
+The first two arguments are the values to be concatenated. The third
+argument is the shift amount. The arguments may be any integer type or a
+vector with integer element type. All arguments and the return value must
+have the same type.
+
+Example:
+""""""""
+
+.. code-block:: text
+
+      %r = call i8 @llvm.fshr.i8(i8 %x, i8 %y, i8 %z)  ; %r = i8: lsb_extract((concat(x, y) >> (z % 8)), 8)
+      %r = call i8 @llvm.fshr.i8(i8 255, i8 0, i8 15)  ; %r = i8: 254 (0b11111110)
+      %r = call i8 @llvm.fshr.i8(i8 15, i8 15, i8 11)  ; %r = i8: 225 (0b11100001)
+      %r = call i8 @llvm.fshr.i8(i8 0, i8 255, i8 8)   ; %r = i8: 255 (0b11111111)
+
 Arithmetic with Overflow Intrinsics
 -----------------------------------
 
@@ -13351,16 +13453,17 @@ Overview:
 """""""""
 
 The '``llvm.launder.invariant.group``' intrinsic can be used when an invariant
-established by invariant.group metadata no longer holds, to obtain a new pointer
-value that does not carry the invariant information. It is an experimental
-intrinsic, which means that its semantics might change in the future.
+established by ``invariant.group`` metadata no longer holds, to obtain a new
+pointer value that carries fresh invariant group information. It is an
+experimental intrinsic, which means that its semantics might change in the
+future.
 
 
 Arguments:
 """"""""""
 
-The ``llvm.launder.invariant.group`` takes only one argument, which is
-the pointer to the memory for which the ``invariant.group`` no longer holds.
+The ``llvm.launder.invariant.group`` takes only one argument, which is a pointer
+to the memory.
 
 Semantics:
 """"""""""
@@ -13368,6 +13471,43 @@ Semantics:
 Returns another pointer that aliases its argument but which is considered different
 for the purposes of ``load``/``store`` ``invariant.group`` metadata.
 It does not read any accessible memory and the execution can be speculated.
+
+'``llvm.strip.invariant.group``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic. The memory object can belong to any address
+space. The returned pointer must belong to the same address space as the
+argument.
+
+::
+
+      declare i8* @llvm.strip.invariant.group.p0i8(i8* <ptr>)
+
+Overview:
+"""""""""
+
+The '``llvm.strip.invariant.group``' intrinsic can be used when an invariant
+established by ``invariant.group`` metadata no longer holds, to obtain a new pointer
+value that does not carry the invariant information. It is an experimental
+intrinsic, which means that its semantics might change in the future.
+
+
+Arguments:
+""""""""""
+
+The ``llvm.strip.invariant.group`` takes only one argument, which is a pointer
+to the memory.
+
+Semantics:
+""""""""""
+
+Returns another pointer that aliases its argument but which has no associated
+``invariant.group`` metadata.
+It does not read any memory and can be speculated.
+
+
 
 .. _constrainedfp:
 
@@ -14422,10 +14562,10 @@ The ``llvm.objectsize`` intrinsic takes three arguments. The first argument is
 a pointer to or into the ``object``. The second argument determines whether
 ``llvm.objectsize`` returns 0 (if true) or -1 (if false) when the object size
 is unknown. The third argument controls how ``llvm.objectsize`` acts when
-``null`` is used as its pointer argument. If it's true and the pointer is in
-address space 0, ``null`` is treated as an opaque value with an unknown number
-of bytes. Otherwise, ``llvm.objectsize`` reports 0 bytes available when given
-``null``.
+``null`` in address space 0 is used as its pointer argument. If it's ``false``,
+``llvm.objectsize`` reports 0 bytes available when given ``null``. Otherwise, if
+the ``null`` is in a non-zero address space or if ``true`` is given for the
+third argument of ``llvm.objectsize``, we assume its size is unknown.
 
 The second and third arguments only accept constants.
 

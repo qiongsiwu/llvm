@@ -87,10 +87,11 @@ protected:
   /// will be used as a symbol offset within the fragment.
   void flushPendingLabels(MCFragment *F, uint64_t FOffset = 0);
 
-  void addFragmentAtoms();
-
 public:
   void visitUsedSymbol(const MCSymbol &Sym) override;
+
+  /// Create a dummy fragment to assign any pending labels.
+  void flushPendingLabels() { flushPendingLabels(nullptr); }
 
   MCAssembler &getAssembler() { return *Assembler; }
   MCAssembler *getAssemblerPtr() override;
@@ -168,6 +169,9 @@ public:
   void emitFill(const MCExpr &NumValues, int64_t Size, int64_t Expr,
                 SMLoc Loc = SMLoc()) override;
   void EmitFileDirective(StringRef Filename) override;
+
+  void EmitAddrsig() override;
+  void EmitAddrsigSym(const MCSymbol *Sym) override;
 
   void FinishImpl() override;
 

@@ -371,6 +371,9 @@ static bool is_local_impl(struct STATVFS &Vfs) {
 #elif defined(__Fuchsia__)
   // Fuchsia doesn't yet support remote filesystem mounts.
   return true;
+#elif defined(__HAIKU__)
+  // Haiku doesn't expose this information.
+  return false;
 #elif defined(__sun)
   // statvfs::f_basetype contains a null-terminated FSType name of the mounted target
   StringRef fstype(Vfs.f_basetype);
@@ -521,7 +524,7 @@ static void expandTildeExpr(SmallVectorImpl<char> &Path) {
 }
 
 static std::error_code fillStatus(int StatRet, const struct stat &Status,
-                             file_status &Result) {
+                                  file_status &Result) {
   if (StatRet != 0) {
     std::error_code ec(errno, std::generic_category());
     if (ec == errc::no_such_file_or_directory)
@@ -634,8 +637,7 @@ std::error_code mapped_file_region::init(int FD, uint64_t Offset,
 
 mapped_file_region::mapped_file_region(int fd, mapmode mode, size_t length,
                                        uint64_t offset, std::error_code &ec)
-    : Size(length), Mapping(), FD(fd), Mode(mode) {
-  (void)FD;
+    : Size(length), Mapping(), Mode(mode) {
   (void)Mode;
   ec = init(fd, offset, mode);
   if (ec)
@@ -767,7 +769,7 @@ std::error_code openFile(const Twine &Name, int &ResultFD,
 
   SmallString<128> Storage;
   StringRef P = Name.toNullTerminatedStringRef(Storage);
-  if ((ResultFD = sys::RetryAfterSignal(-1, open, P.begin(), OpenFlags, Mode)) <
+  if ((ResultFD = sys::RetryAfterSignal(-1, ::open, P.begin(), OpenFlags, Mode)) <
       0)
     return std::error_code(errno, std::generic_category());
 #ifndef O_CLOEXEC

@@ -178,7 +178,8 @@ public:
                              unsigned ByteAlignment) override;
 
   void EmitZerofill(MCSection *Section, MCSymbol *Symbol = nullptr,
-                    uint64_t Size = 0, unsigned ByteAlignment = 0) override;
+                    uint64_t Size = 0, unsigned ByteAlignment = 0,
+                    SMLoc Loc = SMLoc()) override;
 
   void EmitTBSSSymbol(MCSection *Section, MCSymbol *Symbol, uint64_t Size,
                       unsigned ByteAlignment = 0) override;
@@ -317,6 +318,9 @@ public:
   bool EmitRelocDirective(const MCExpr &Offset, StringRef Name,
                           const MCExpr *Expr, SMLoc Loc,
                           const MCSubtargetInfo &STI) override;
+
+  void EmitAddrsig() override;
+  void EmitAddrsigSym(const MCSymbol *Sym) override;
 
   /// If this file is backed by an assembly streamer, this dumps the specified
   /// string in the output .s file. This capability is indicated by the
@@ -749,14 +753,18 @@ void MCAsmStreamer::EmitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size,
 }
 
 void MCAsmStreamer::EmitZerofill(MCSection *Section, MCSymbol *Symbol,
-                                 uint64_t Size, unsigned ByteAlignment) {
+                                 uint64_t Size, unsigned ByteAlignment,
+                                 SMLoc Loc) {
   if (Symbol)
     AssignFragment(Symbol, &Section->getDummyFragment());
 
   // Note: a .zerofill directive does not switch sections.
   OS << ".zerofill ";
 
+  assert(Section->getVariant() == MCSection::SV_MachO &&
+         ".zerofill is a Mach-O specific directive");
   // This is a mach-o specific directive.
+
   const MCSectionMachO *MOSection = ((const MCSectionMachO*)Section);
   OS << MOSection->getSegmentName() << "," << MOSection->getSectionName();
 
@@ -779,7 +787,11 @@ void MCAsmStreamer::EmitTBSSSymbol(MCSection *Section, MCSymbol *Symbol,
 
   assert(Symbol && "Symbol shouldn't be NULL!");
   // Instead of using the Section we'll just use the shortcut.
+
+  assert(Section->getVariant() == MCSection::SV_MachO &&
+         ".zerofill is a Mach-O specific directive");
   // This is a mach-o specific directive and section.
+
   OS << ".tbss ";
   Symbol->print(OS, MAI);
   OS << ", " << Size;
@@ -1171,6 +1183,9 @@ void MCAsmStreamer::emitDwarfFile0Directive(StringRef Directory,
   // .file 0 is new for DWARF v5.
   if (getContext().getDwarfVersion() < 5)
     return;
+  // Inform MCDwarf about the root file.
+  getContext().setMCLineTableRootFile(CUID, Directory, Filename, Checksum,
+                                      Source);
 
   SmallString<128> Str;
   raw_svector_ostream OS1(Str);
@@ -1832,6 +1847,17 @@ bool MCAsmStreamer::EmitRelocDirective(const MCExpr &Offset, StringRef Name,
   }
   EmitEOL();
   return false;
+}
+
+void MCAsmStreamer::EmitAddrsig() {
+  OS << "\t.addrsig";
+  EmitEOL();
+}
+
+void MCAsmStreamer::EmitAddrsigSym(const MCSymbol *Sym) {
+  OS << "\t.addrsig_sym ";
+  Sym->print(OS, MAI);
+  EmitEOL();
 }
 
 /// EmitRawText - If this file is backed by an assembly streamer, this dumps
